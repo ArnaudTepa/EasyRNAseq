@@ -1,4 +1,4 @@
-<img width="700" height="700" alt="Designer (14)" src="https://github.com/user-attachments/assets/21f655eb-ac41-4ad5-9b33-dc67d1bb6143" />
+<img width="300" height="300" alt="Designer (14)" src="https://github.com/user-attachments/assets/21f655eb-ac41-4ad5-9b33-dc67d1bb6143" />
 
 # EasyRNAseq: A Complete Pipeline for RNA-seq and Polymorphism Analysis
 
