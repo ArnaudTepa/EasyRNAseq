@@ -1,0 +1,7 @@
+Kisumu_Susceptible
+Mangoum_Permethrin10x
+Mangoum_Permethrin1x
+Mangoum_Permethrin5x
+Mangoum_Unexposed
+MK_Permethrin1x
+MK_Unexposed

@@ -1,0 +1,13 @@
+	Strain	condition
+N1	N1	Ng.Sus
+N2	N2	Ng.Sus
+N3	N3	Ng.Sus
+N4	N4	Ng.Sus
+N_Unx1	N_Unx1	Ng.Unx
+N_Unx2	N_Unx2	Ng.Unx
+N_Unx3	N_Unx3	Ng.Unx
+N_Unx4	N_Unx4	Ng.Unx
+N_P1x1	N_P1x1	Ng.Perm1x
+N_P1x2	N_P1x2	Ng.Perm1x
+N_P1x3	N_P1x3	Ng.Perm1x
+N_P1x4	N_P1x4	Ng.Perm1x
