@@ -64,4 +64,4 @@ bash run_all.sh
 - **Transparent**: Complete workflow for RNA-seq and polymorphism analysis.  
 - **Open Science**: Code and data are publicly available for reuse and adaptation.  
 - **Optimized for Resistance Studies**: Includes candidate gene analysis and population genetics metrics.  
-```
+
