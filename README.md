@@ -9,7 +9,7 @@ This repository contains all scripts, workflows, and documentation used in the s
 **Insights from transcriptomic profiling identify the CYP6Z gene family as key drivers of pyrethroid resistance escalation in *Anopheles gambiae* from Cameroon**  
 Under review in *BMC Genomics* (2025)
 
-**Preprint** Tepa, A.; Kouamo, M.; Kengne-Ouafo, J.A.; Tchouakui, M.; Pieme, C.A.; Wondji, C.S. Insights from Transcriptomic Profiling Identify the CYP6Z Gene Family as Key Drivers of Pyrethroid Resistance Escalation in Anopheles Gambiae from Cameroon 2025. https://assets-eu.researchsquare.com/files/rs-7592244/v1/f70626fa-c2ff-4ef6-84bc-88ad16d377b1.pdf?c=1758616584
+**Preprint** Tepa, A.; Kouamo, M.; Kengne-Ouafo, J.A.; Tchouakui, M.; Pieme, C.A.; Wondji, C.S. Insights from transcriptomic profiling identify the CYP6Z gene family as key drivers of pyrethroid resistance escalation in *Anopheles gambiae* from Cameroon 2025. https://assets-eu.researchsquare.com/files/rs-7592244/v1/f70626fa-c2ff-4ef6-84bc-88ad16d377b1.pdf?c=1758616584
 
 ---
 
