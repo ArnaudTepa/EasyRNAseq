@@ -524,3 +524,334 @@ if (length(filtered_df_list) > 0) {
 }  
 
 
+
+# Gene Ontology enrichment
+
+
+# Read the combinaisons from a text file without showing warnings  
+combinaisons_file <- "comparisons2.txt"  # Specify your file path here  
+specific_combinaisons <- suppressWarnings(readLines(combinaisons_file))
+
+
+candidate_genes_id <- read_excel(file.path(dir, "candidate_genes.xlsx"))
+candidate_genes_id <- as.list(candidate_genes_id)
+
+
+# Load annotation file generated with blast2GO and remove duplicated rows  
+Annotation <- read_excel(file.path(dir, "Annotation.xlsx")) %>%  
+  distinct(GeneID, .keep_all = TRUE)  # Remove duplicated GeneIDs  
+
+# Function to extract GO terms and IDs based on prefix  
+extract_GO_terms <- function(go_ids, go_names, prefix) {  
+  id_pattern <- paste0(prefix, ":GO:")  
+  terms_pattern <- paste0(prefix, ":")  
+  
+  go_id_result <- sapply(go_ids, function(x) {  
+    go_terms <- unlist(strsplit(x, ";"))  
+    go_terms <- go_terms[grep(id_pattern, go_terms)]  
+    gsub(paste0(prefix, ":"), "", go_terms)  
+  }) %>%   
+    sapply(paste, collapse = ";")  # Combine go terms if multiple  
+  
+  go_terms_result <- sapply(go_names, function(x) {  
+    go_terms <- unlist(strsplit(x, ";"))  
+    go_terms <- go_terms[grep(paste0(prefix, ":"), go_terms)]  
+    gsub(paste0(prefix, ":"), "", go_terms)  
+  }) %>%  
+    sapply(paste, collapse = ";")  # Combine go terms if multiple  
+  
+  return(list(go_ids = go_id_result, go_terms = go_terms_result))  
+}  
+
+# Extract GO terms for Biological Process (BP), Molecular Function (MF), and Cellular Component (CC)  
+bp_results <- extract_GO_terms(Annotation$GO_IDs, Annotation$GO_Names, "P")  
+mf_results <- extract_GO_terms(Annotation$GO_IDs, Annotation$GO_Names, "F")  
+cc_results <- extract_GO_terms(Annotation$GO_IDs, Annotation$GO_Names, "C")  
+
+# Add extracted GO terms to the Annotation dataframe  
+Annotation <- Annotation %>%  
+  mutate(  
+    BP_GO_ID = bp_results$go_ids,  
+    BP_GO_terms = bp_results$go_terms,  
+    MF_GO_ID = mf_results$go_ids,  
+    MF_GO_terms = mf_results$go_terms,  
+    CC_GO_ID = cc_results$go_ids,  
+    CC_GO_terms = cc_results$go_terms  
+  )  
+
+# Clean up and filter only relevant columns  
+GO_file <- Annotation %>%  
+  select(GeneID, BP_GO_ID, BP_GO_terms, MF_GO_ID, MF_GO_terms, CC_GO_ID, CC_GO_terms, Enzyme_Codes, Enzyme_Names)  
+
+# Display the first few rows of the final data frame  
+head(GO_file) 
+
+
+# Create a function to separate GO IDs and their corresponding terms while maintaining correspondence  
+separate_go_terms <- function(data, id_col, term_col) {  
+  data %>%  
+    mutate(temp_IDs = strsplit(!!sym(id_col), ";"),  
+           temp_terms = strsplit(!!sym(term_col), ";")) %>%  
+    # Create lists of data frames, aligning IDs and terms  
+    mutate(data_pairs = map2(temp_IDs, temp_terms, ~ {  
+      # Create a data frame from the pairs  
+      # Length of the IDs and terms lists  
+      len <- max(length(.x), length(.y))  
+      # Fill with NA where lists are shorter  
+      df <- data.frame(  
+        ID = c(.x, rep(NA, len - length(.x))),  
+        Term = c(.y, rep(NA, len - length(.y))),  
+        stringsAsFactors = FALSE  
+      )  
+      return(df)  
+    })) %>%  
+    # Unnest the data pairs into long format  
+    unnest(data_pairs) %>%  
+    # Select and rename to return only the original column names  
+    select(GeneID, ID, Term) %>%  
+    rename_with(~ id_col, .cols = ID) %>%
+    rename_with(~ term_col, .cols = Term)
+}  
+
+
+# Create subsets for further analysis  
+GO_file_MF <- separate_go_terms(GO_file, "MF_GO_ID", "MF_GO_terms")  
+head(GO_file_MF)  # View the results  
+
+GO_file_BP <- separate_go_terms(GO_file, "BP_GO_ID", "BP_GO_terms")  
+head(GO_file_BP)  # View the results  
+
+GO_file_CC <- separate_go_terms(GO_file, "CC_GO_ID", "CC_GO_terms")  
+head(GO_file_CC)  # View the results  
+
+GO_file_Enzyme <- separate_go_terms(GO_file, "Enzyme_Codes", "Enzyme_Names")  
+head(GO_file_Enzyme)  # View the results  
+
+
+# Function to truncate labels  
+truncate_labels <- function(labels, max_length = 50) {  
+  sapply(labels, function(x) {  
+    if (is.na(x)) {  # Check for NA values  
+      return(NA)     # Return NA if the value is NA  
+    } else if (nchar(x) > max_length) {  
+      paste0(substr(x, 1, max_length - 3), "...")  # Truncate and add ellipses  
+    } else {  
+      x  
+    }  
+  })  
+}  
+
+# Initialize a list to store all Result DataFrames if desired
+results_list <- list()
+
+# Prepare your gene lists: Define your genes of interest and the background gene list.  
+background_genes <- unique(GO_file$GeneID)  # All genes from GO data  
+
+# Function to perform GO enrichment analysis  
+perform_go_enrichment <- function(candidate_genes, go_data, go_id_col, go_terms_col, output_prefix, list_name, background_genes) {  
+  
+  # Create contingency tables for GO IDs  
+  go_counts_id <- go_data %>%  
+    group_by(!!sym(go_id_col)) %>%  
+    summarize(total_genes_in_GO = n(), .groups = 'drop')  
+  
+  cand_go_counts_id <- go_data %>%  
+    filter(GeneID %in% candidate_genes) %>%  
+    group_by(!!sym(go_id_col)) %>%  
+    summarize(Cands_in_GO = n(), .groups = 'drop')  
+  
+  # Merge the counts for GO IDs  
+  enrichment_data_id <- full_join(go_counts_id, cand_go_counts_id, by = go_id_col) %>%  
+    mutate(  
+      Cands_in_GO = replace_na(Cands_in_GO, 0),  
+      total_genes_in_GO = replace_na(total_genes_in_GO, 0),  
+      total_genes_in_background = length(background_genes),  
+      GeneRatio = Cands_in_GO / total_genes_in_GO,  
+      fold_enrichment = (Cands_in_GO / length(candidate_genes)) /  
+        (total_genes_in_GO / total_genes_in_background)  
+    )  
+  
+  # Calculate p-values using Fisher's exact test for GO IDs  
+  enrichment_data_id <- enrichment_data_id %>%  
+    rowwise() %>%  
+    mutate(  
+      p_value = fisher.test(matrix(c(Cands_in_GO,  
+                                     length(candidate_genes) - Cands_in_GO,  
+                                     total_genes_in_GO - Cands_in_GO,  
+                                     total_genes_in_background - length(candidate_genes)),  
+                                   nrow = 2))$p.value  
+    )   
+  
+  # Adjust p-values  
+  enrichment_data_id <- enrichment_data_id %>%  
+    mutate(adj_p_value = p.adjust(p_value, method = "bonferroni"))  
+  
+  all_significant_results_id <- enrichment_data_id %>%  
+    filter(adj_p_value < 0.05, fold_enrichment > 2) %>%  
+    arrange(desc(Cands_in_GO))
+  
+  # Save all results for GO IDs as environment object
+  assign(paste0(output_prefix, "_", list_name, "_all_significant_results_id"), all_significant_results_id, envir = .GlobalEnv)
+  # Or, alternatively, save to the results list:
+  results_list[[paste0(output_prefix, "_", list_name, "_all_significant_results_id")]] <- all_significant_results_id
+  write.xlsx(all_significant_results_id, paste0(output_prefix, "_", list_name, "_all_significant_results_id.xlsx")) 
+  
+  # Filter results for GO IDs and keep only the top 30 enriched
+  significant_results_id <- enrichment_data_id %>%  
+    filter(adj_p_value < 0.05, fold_enrichment > 2) %>%  
+    arrange(desc(Cands_in_GO)) %>%{
+      rbind(head(., 30))
+    }  # Select top 30 enriched GO IDs
+  
+  # Save results for top 30 GO IDs as environment object
+  assign(paste0(output_prefix, "_", list_name, "_top_30_significant_results_id"), significant_results_id, envir = .GlobalEnv)
+  results_list[[paste0(output_prefix, "_", list_name, "_top_30_significant_results_id")]] <- significant_results_id
+  write.xlsx(significant_results_id, paste0(output_prefix, "_", list_name, "_top_30_significant_results_id.xlsx"))
+  
+  # Apply truncation to GO IDs for plotting
+  significant_results_id[[go_id_col]] <- truncate_labels(significant_results_id[[go_id_col]])
+
+  # Plot for GO IDs  
+  go_id_plot <- ggplot(significant_results_id, aes(x = fold_enrichment, y = reorder(!!sym(go_id_col), GeneRatio), size = Cands_in_GO, color = adj_p_value)) +  
+    geom_point(alpha = 0.8) +  
+    scale_color_gradient(low = "blue", high = "red", na.value = NA) +  
+    labs(x = "Fold enrichment", y = "GO ID", size = "N genes", color = "FDR",    
+         title = str_wrap(paste(output_prefix, "ID for", list_name), width = 50)) +  
+    theme_minimal() +  
+    theme(legend.position = "right")  
+  
+  # Save the plot as PNG  
+  ggsave(paste0(output_prefix, "_", list_name, "_GO_ID_plot.png"), plot = go_id_plot, width = 1500, height = 3000, unit = "px", dpi = 400)  
+  
+  
+  # Create contingency tables for GO Terms
+  go_counts_terms <- go_data %>%  
+    group_by(!!sym(go_terms_col)) %>%  
+    summarize(total_genes_in_GO = n(), .groups = 'drop')  
+  
+  cand_go_counts_terms <- go_data %>%  
+    filter(GeneID %in% candidate_genes) %>%  
+    group_by(!!sym(go_terms_col)) %>%  
+    summarize(Cands_in_GO = n(), .groups = 'drop')  
+  
+  # Merge the counts for GO Terms
+  enrichment_data_terms <- full_join(go_counts_terms, cand_go_counts_terms, by = go_terms_col) %>%  
+    mutate(  
+      Cands_in_GO = replace_na(Cands_in_GO, 0),  
+      total_genes_in_GO = replace_na(total_genes_in_GO, 0),  
+      total_genes_in_background = length(background_genes), 
+      GeneRatio = Cands_in_GO / total_genes_in_GO,  
+      fold_enrichment = (Cands_in_GO / length(candidate_genes)) /  
+        (total_genes_in_GO / total_genes_in_background)  
+    )  
+  
+  # Calculate p-values using Fisher's exact test for GO Terms
+  enrichment_data_terms <- enrichment_data_terms %>%  
+    rowwise() %>%  
+    mutate(  
+      p_value = fisher.test(matrix(c(Cands_in_GO,  
+                                     length(candidate_genes) - Cands_in_GO,  
+                                     total_genes_in_GO - Cands_in_GO,  
+                                     total_genes_in_background - length(candidate_genes)),  
+                                   nrow = 2))$p.value  
+    )   
+  
+  # Adjust p-values
+  enrichment_data_terms <- enrichment_data_terms %>%  
+    mutate(adj_p_value = p.adjust(p_value, method = "bonferroni"))  
+  
+  all_significant_results_terms <- enrichment_data_terms %>%  
+    filter(adj_p_value < 0.05, fold_enrichment > 2) %>%  
+    arrange(desc(Cands_in_GO))
+  
+  # Save all results for GO terms as environment object
+  assign(paste0(output_prefix, "_", list_name, "_all_significant_results_terms"), all_significant_results_terms, envir = .GlobalEnv)
+  # Or, alternatively, save to the results list:
+  results_list[[paste0(output_prefix, "_", list_name, "_all_significant_results_terms")]] <- all_significant_results_terms
+  write.xlsx(all_significant_results_terms, paste0(output_prefix, "_", list_name, "_all_significant_results_terms.xlsx")) 
+  
+  # Filter results for GO Terms and keep only the top 30 enriched
+  significant_results_terms <- enrichment_data_terms %>%   
+    filter(adj_p_value < 0.05, fold_enrichment > 2) %>%  
+    arrange(desc(Cands_in_GO)) %>%{
+      rbind( head(., 30))
+    }  # Select top 20 enriched GO Terms
+  
+  # Save results for top 20 GO Terms as environment object
+  assign(paste0(output_prefix, "_", list_name, "_top_30_significant_results_terms"), significant_results_terms, envir = .GlobalEnv)
+  results_list[[paste0(output_prefix, "_", list_name, "_top_30_significant_results_terms")]] <- significant_results_terms
+  write.xlsx(significant_results_terms, paste0(output_prefix, "_", list_name, "_top_30_significant_results_terms.xlsx"))
+  
+  # Apply truncation to GO Terms for plotting
+  significant_results_terms[[go_terms_col]] <- truncate_labels(significant_results_terms[[go_terms_col]])
+
+  # Plot for GO terms  
+  go_terms_plot <- ggplot(significant_results_terms, aes(x = fold_enrichment, y = reorder(!!sym(go_terms_col), GeneRatio), size = Cands_in_GO, color = adj_p_value)) +  
+    geom_point(alpha = 0.8) +  
+    scale_color_gradient(low = "blue", high = "red", na.value = NA) +  
+    labs(x = "Fold enrichment", y = "GO terms", size = "N genes", color = "FDR",    
+         title = str_wrap(paste(output_prefix, "terms for", list_name), width = 50)) +  
+    theme_minimal() +  
+    theme(legend.position = "right")  
+  
+  # Save the plot as PNG  
+  ggsave(paste0(output_prefix, "_", list_name, "_GO_terms_plot.png"), plot = go_terms_plot, width = 2500, height = 3000, unit = "px", dpi = 400)  
+
+  # Combine Terms and IDs in same file
+  
+  
+  all_significant_results <- significant_results_id %>%
+    left_join(
+      all_significant_results_terms,
+      by = c(
+        "total_genes_in_GO",
+        "Cands_in_GO",
+        "total_genes_in_background",
+        "GeneRatio",
+        "fold_enrichment",
+        "p_value",
+        "adj_p_value"
+      )
+    ) %>%
+    rename(
+      "Genes in GO" = total_genes_in_GO,
+      "Genes in background" = total_genes_in_background,
+      "p value" = p_value,
+      "N genes" = Cands_in_GO,
+      "Gene Ratio" = GeneRatio,
+      "Fold enrichment" = fold_enrichment,
+      "FDR" = adj_p_value
+    )
+  
+  write.xlsx(
+    all_significant_results,
+    paste0(output_prefix, "_", list_name, "_all_significant_results.xlsx")
+  )
+  
+  
+}
+
+# Initialize an empty list to store candidate genes for each combination  
+candidate_genes_list <- list()  
+
+# Iterate through each name in candidate_genes_id  
+for (combination_name in names(candidate_genes_id)) {  
+  
+  # Extract the candidate genes for the current combination  
+  candidate_genes <- candidate_genes_id[[combination_name]]  
+  
+  # Store the result in the candidate_genes_list with the name as the current combination  
+  candidate_genes_list[[combination_name]] <- candidate_genes  
+  
+  # Use the combination name as the list name for GO enrichment analysis  
+  list_name <- combination_name  # Directly use the combination name  
+  
+  # Use the background genes in your function calls  
+  perform_go_enrichment(candidate_genes, GO_file_MF, "MF_GO_ID", "MF_GO_terms", "MF", list_name, background_genes)  
+  perform_go_enrichment(candidate_genes, GO_file_BP, "BP_GO_ID", "BP_GO_terms", "BP", list_name, background_genes)  
+  perform_go_enrichment(candidate_genes, GO_file_CC, "CC_GO_ID", "CC_GO_terms", "CC", list_name, background_genes)  
+  perform_go_enrichment(candidate_genes, GO_file_Enzyme, "Enzyme_Codes", "Enzyme_Names", "Enzyme", list_name, background_genes)  
+}
+
+
+
